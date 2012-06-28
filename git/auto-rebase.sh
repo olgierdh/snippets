@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh -e
 echo "enter name of the branch to merge:"
 read branchName
 
