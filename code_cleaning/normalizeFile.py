@@ -4,48 +4,76 @@ import os
 import argparse
 import string
 import re
+import mmap
+import uuid
 
 class RegExps( object ):
-    def __init__( self ):
-        pass
+    removeTrailingSpaces = re.compile( '[\t ]*$' )
 
-    removeTrailingSpaces = re.compile( '[\t ]*$' ) 
+class ReplaceData( object ):
+    replacements = ( ( '\r\n', '\n', 'EOF1' ), ( '\r', '\n', 'EOF2' ), ( '\t', '    ', 'TAB' ) )
 
+def mapfileLineGenerator( mappedFile ):
+    line = mappedFile.readline()
 
+    while line:
+        yield line
+        line = mappedFile.readline()
 
-def findFiles( startDir, fileExt ):
-
+def findFiles( startDir, fileExt, recLevel, currLevel = 0 ):
     contents    = os.listdir( startDir )
 
     files   = [ x for x in contents if os.path.isfile( os.path.join( startDir, x ) ) and x.endswith( fileExt ) ]
-    dirs    = [ x for x in contents if os.path.isdir( os.path.join( startDir, x ) ) ]
+    dirs    = [ x for x in contents if os.path.isdir( os.path.join( startDir, x ) ) and x[ 0 ] != '.' ]
 
     for f in files:
-        filePath = os.path.join( startDir, f )
-        oldFilePath = filePath + '.old'
-        print filePath
+        originalFilePath    = os.path.join( startDir, f )
+        oldFilePath         = os.path.join( startDir, "." + f ) + '.old'
+        switchFiles         = False
 
-        os.rename( filePath, oldFilePath )
+        with open( originalFilePath, 'rb' ) as origFile:
+            origFileMap = mmap.mmap( origFile.fileno(), 0, access = mmap.ACCESS_READ )
 
-        dst = open( filePath, 'wb' )
+            #test if we have to convert the file
+            exReplacements = [ x for x in ReplaceData.replacements if x[ 0 ] in origFileMap ]
 
-        for line in open( oldFilePath, 'rb' ).readlines():
-            # remove the CR and make it LF
-            temp = string.replace( line, '\r\n', '\n' )
-            temp = string.replace( temp, '\r', '\n' )
+            if len( exReplacements ) > 0:
+                # write the detected problems
+                for rep in exReplacements:
+                    print "DETECTED: %s in %s" % ( rep[ 2 ], originalFilePath )
 
-            # remove tabulators and replace them with spaces
-            temp = string.replace( temp, '\t', '    ' )
+                with open( oldFilePath, 'wb' ) as oldFile:
+                    for line in mapfileLineGenerator( origFileMap ):
+                        # copy the line for further simplifications
+                        temp = line
 
-            # remove trailing spaces
-            temp = RegExps.removeTrailingSpaces.sub( '', temp )
+                        # remove the CR and make it LF
+                        for t in ReplaceData.replacements:
+                            temp = string.replace( temp, t[ 0 ], t[ 1 ] )
 
-            dst.write( temp )
+                        # remove trailing spaces
+                        #temp = RegExps.removeTrailingSpaces.sub( '', temp )
 
-        dst.close()
+                        oldFile.write( temp )
 
-    for d in dirs:
-        findFiles( os.path.join( startDir, d ), fileExt )
+                # here we know that we need to switch the file with names
+                switchFiles = True
+
+            #let's close the map
+            origFileMap.close()
+
+        # switch files f1->tmp, f2->f1, tmp->f2
+        if switchFiles:
+            tmpFileName = os.path.join( startDir, str( uuid.uuid1() ) )
+            os.rename( originalFilePath, tmpFileName )
+            os.rename( oldFilePath, originalFilePath )
+            os.rename( tmpFileName, oldFilePath )
+
+
+    if recLevel == 0 or ( recLevel > 0 and currLevel < recLevel ):
+        for d in dirs:
+            findFiles( os.path.join( startDir, d ), fileExt, recLevel,
+                    currLevel + 1 )
 
 
 if __name__ == '__main__':
@@ -56,12 +84,13 @@ if __name__ == '__main__':
     parser.add_argument( '-e', dest='extension', type=str, default='',
                         help='file extension' )
     parser.add_argument( '-r', dest='recursive', type=int, default=1,
-                       help='recursive mode, default true')
+                       help='recursive mode, default 1, set 0 if you want to enable unlimited recursion')
 
     args        = parser.parse_args()
 
     startDir    = args.startDir
     recursive   = args.recursive
     fileExt     = args.extension
-    
-    findFiles( startDir, fileExt )
+
+    findFiles( startDir, fileExt, recursive )
+
