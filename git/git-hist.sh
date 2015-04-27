@@ -2,7 +2,7 @@
 
 OPTIND=1
 
-usage() { echo "Usage: $0 -s <YY:MM:DDTHH:MM:SS[TIME ZONE]> [-h (help)] [-u <date until> (By default this is an actual date)]" 1>&2; exit 1;  }
+usage() { echo "Usage: $0 -s <YYYY-MM-DDTHH:MM:SS[TIME ZONE]> [-h (help)] [-u <date until> (By default this is an actual date)]" 1>&2; exit 1;  }
 
 since=""
 until=`date +"%Y-%m-%dT%H:%M:%S%z"`
